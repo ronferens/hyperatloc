@@ -157,7 +157,8 @@ class RobotCar(data.Dataset):
         ts = {}
         vo_stats = {}
         self.imgs = []
-        for seq in seqs:
+        self.scene_idx = []
+        for idx, seq in enumerate(seqs):
             seq_dir = osp.join(data_dir, seq)
             # read the image timestamps
             ts_filename = osp.join(seq_dir, 'stereo.timestamps')
@@ -185,6 +186,7 @@ class RobotCar(data.Dataset):
 
             # self.imgs.extend([osp.join(seq_dir, 'stereo', 'centre', '{:d}.png'.format(t)) for t in ts[seq]])
             self.imgs.extend([osp.join(seq_dir, 'stereo', 'centre_processed', '{:d}.png'.format(t)) for t in ts[seq]])
+            self.scene_idx.extend([idx for t in ts[seq]])
 
         # read / save pose normalization information
         poses = np.empty((0, 12))
@@ -212,6 +214,7 @@ class RobotCar(data.Dataset):
         self.im_loader = partial(robotcar_loader, model=camera_model)
 
     def __getitem__(self, index):
+        img_index = self.scene_idx[index]
         if self.skip_images:
             img = None
             pose = self.poses[index]
@@ -236,10 +239,11 @@ class RobotCar(data.Dataset):
         if self.transform is not None:
             img = self.transform(img)
 
-        return img, pose
+        return img, pose, img_index
 
     def __len__(self):
         return len(self.poses)
+
 
 class MF(data.Dataset):
     def __init__(self, dataset, include_vos=False, no_duplicates=False, *args, **kwargs):

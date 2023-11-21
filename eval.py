@@ -22,6 +22,7 @@ from data.dataloaders import SevenScenes, RobotCar, MF
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
 from network.hyperatloc import HyperAtLoc
+from network.hyperpose.MSHyperPose import MSHyperPose
 
 # Config
 opt = Options().parse()
@@ -37,6 +38,8 @@ elif opt.model == 'AtLocPlus':
     model = AtLocPlus(atlocplus=atloc)
 elif opt.model == 'HyperAtLoc':
     model = HyperAtLoc()
+elif opt.model == 'MSHyperPose':
+    model = MSHyperPose()
 else:
     raise NotImplementedError
 model.eval()
@@ -62,7 +65,7 @@ pose_m, pose_s = np.loadtxt(pose_stats_file)  # mean and stdev
 # Load the dataset
 kwargs = dict(scene=opt.scene, data_path=opt.data_dir, train=False, transform=data_transform,
               target_transform=target_transform, seed=opt.seed)
-if opt.model == 'AtLoc' or opt.model == 'HyperAtLoc':
+if opt.model == 'AtLoc' or opt.model == 'HyperAtLoc' or opt.model == 'MSHyperPose':
     if opt.dataset == '7Scenes':
         data_set = SevenScenes(**kwargs)
     elif opt.dataset == 'RobotCar':
@@ -93,16 +96,17 @@ else:
     sys.exit(-1)
 
 # inference loop
-for idx, (data, target) in enumerate(loader):
+for idx, (data, target, scene_idx) in enumerate(loader):
     if opt.verbose and idx % 200 == 0:
         print('Image {:d} / {:d}'.format(idx, len(loader)))
 
     # output : 1 x 6
     data_var = Variable(data, requires_grad=False)
     data_var = data_var.to(device)
+    scene_idx = None
 
     with torch.set_grad_enabled(False):
-        output = model(data_var)
+        output, _ = model(data_var, scene_idx)
     s = output.size()
     output = output.cpu().data.numpy().reshape((-1, s[-1]))
     target = target.numpy().reshape((-1, s[-1]))

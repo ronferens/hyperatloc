@@ -12,12 +12,12 @@ ORIRENT_MEDIAN_IDX = 4
 
 import numpy as np
 
-input_path = '/media/dev/storage1/robotcar_lr1e6/RobotCar_full_HyperAtLoc_False'
+input_path = '/media/dev/storage1/robotcar_mshyperpose/RobotCar_full_MSHyperPose_False'
 data_dir = '/media/dev/storage1'
 path = join(input_path, 'models')
 scene = 'full'
 scene_idx = 2
-model_type = 'HyperAtLoc'
+model_type = 'MSHyperPose'
 gpu_to_run = 1
 test_model_freq = 1
 min_epoch_to_eval = 0

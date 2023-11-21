@@ -18,6 +18,7 @@ from torch.utils.data import DataLoader
 from torch.autograd import Variable
 from network.hyperatloc import HyperAtLoc
 from tools.utils import load_state_dict
+from network.hyperpose.MSHyperPose import MSHyperPose
 
 # Config
 opt = Options().parse()
@@ -43,6 +44,11 @@ elif opt.model == 'AtLocPlus':
     val_criterion = AtLocPlusCriterion()
 elif opt.model == 'HyperAtLoc':
     model = HyperAtLoc()
+    train_criterion = AtLocCriterion(saq=opt.beta, learn_beta=True)
+    val_criterion = AtLocCriterion()
+    param_list = [{'params': model.parameters()}]
+elif opt.model == 'MSHyperPose':
+    model = MSHyperPose()
     train_criterion = AtLocCriterion(saq=opt.beta, learn_beta=True)
     val_criterion = AtLocCriterion()
     param_list = [{'params': model.parameters()}]
@@ -89,7 +95,7 @@ elif opt.model == 'AtLocPlus':
     kwargs = dict(kwargs, dataset=opt.dataset, skip=opt.skip, steps=opt.steps, variable_skip=opt.variable_skip)
     train_set = MF(train=True, real=opt.real, **kwargs)
     val_set = MF(train=False, real=opt.real, **kwargs)
-elif opt.model == 'HyperAtLoc':
+elif opt.model == 'HyperAtLoc' or opt.model == 'MSHyperPose':
     if opt.dataset == '7Scenes':
         train_set = SevenScenes(train=True, **kwargs)
         val_set = SevenScenes(train=False, **kwargs)
@@ -114,52 +120,56 @@ if opt.checkpoint_path is not None:
 
 train_criterion.to(device)
 val_criterion.to(device)
+nll_loss = torch.nn.NLLLoss()
 
 total_steps = opt.steps
 writer = SummaryWriter(log_dir=opt.runs_dir)
 experiment_name = opt.exp_name
 for epoch in range(opt.epochs):
-    if epoch % opt.val_freq == 0 or epoch == (opt.epochs - 1):
-        val_batch_time = AverageMeter()
-        val_loss = AverageMeter()
-        model.eval()
-        end = time.time()
-        val_data_time = AverageMeter()
-
-        for batch_idx, (val_data, val_target) in enumerate(val_loader):
-            val_data_time.update(time.time() - end)
-            val_data_var = Variable(val_data, requires_grad=False)
-            val_target_var = Variable(val_target, requires_grad=False)
-            val_data_var = val_data_var.to(device)
-            val_target_var = val_target_var.to(device)
-
-            with torch.set_grad_enabled(False):
-                val_output = model(val_data_var)
-                val_loss_tmp = val_criterion(val_output, val_target_var)
-                val_loss_tmp = val_loss_tmp.item()
-
-            val_loss.update(val_loss_tmp)
-            val_batch_time.update(time.time() - end)
-
-            writer.add_scalar('val_err', val_loss_tmp, total_steps)
-            if batch_idx % opt.print_freq == 0:
-                print('Val {:s}: Epoch {:d}\tBatch {:d}/{:d}\tData time {:.4f} ({:.4f})\tBatch time {:.4f} ({:.4f})\tLoss {:f}' \
-                      .format(experiment_name, epoch, batch_idx, len(val_loader) - 1, val_data_time.val, val_data_time.avg, val_batch_time.val, val_batch_time.avg, val_loss_tmp))
+    if epoch > 0:
+        if epoch % opt.val_freq == 0 or epoch == (opt.epochs - 1):
+            val_batch_time = AverageMeter()
+            val_loss = AverageMeter()
+            model.eval()
             end = time.time()
+            val_data_time = AverageMeter()
 
-        print('Val {:s}: Epoch {:d}, val_loss {:f}'.format(experiment_name, epoch, val_loss.avg))
+            for batch_idx, (val_data, val_target, val_idx) in enumerate(val_loader):
+                val_data_time.update(time.time() - end)
+                val_data_var = Variable(val_data, requires_grad=False)
+                val_target_var = Variable(val_target, requires_grad=False)
+                val_data_var = val_data_var.to(device)
+                val_target_var = val_target_var.to(device)
 
-        if epoch % opt.save_freq == 0:
-            filename = osp.join(opt.models_dir, 'epoch_{:03d}.pth.tar'.format(epoch))
-            checkpoint_dict = {'epoch': epoch, 'model_state_dict': model.state_dict(), 'optim_state_dict': optimizer.state_dict(), 'criterion_state_dict': train_criterion.state_dict()}
-            torch.save(checkpoint_dict, filename)
-            print('Epoch {:d} checkpoint saved for {:s}'.format(epoch, experiment_name))
+                gt_scene = val_idx.to(device)
+
+                with torch.set_grad_enabled(False):
+                    val_output, est_scene_log_distr = model(val_data_var, val_idx)
+                    val_loss_tmp = val_criterion(val_output, val_target_var) + nll_loss(est_scene_log_distr, gt_scene)
+                    val_loss_tmp = val_loss_tmp.item()
+
+                val_loss.update(val_loss_tmp)
+                val_batch_time.update(time.time() - end)
+
+                writer.add_scalar('val_err', val_loss_tmp, total_steps)
+                if batch_idx % opt.print_freq == 0:
+                    print('Val {:s}: Epoch {:d}\tBatch {:d}/{:d}\tData time {:.4f} ({:.4f})\tBatch time {:.4f} ({:.4f})\tLoss {:f}' \
+                          .format(experiment_name, epoch, batch_idx, len(val_loader) - 1, val_data_time.val, val_data_time.avg, val_batch_time.val, val_batch_time.avg, val_loss_tmp))
+                end = time.time()
+
+            print('Val {:s}: Epoch {:d}, val_loss {:f}'.format(experiment_name, epoch, val_loss.avg))
+
+    if epoch % opt.save_freq == 0:
+        filename = osp.join(opt.models_dir, 'epoch_{:03d}.pth.tar'.format(epoch))
+        checkpoint_dict = {'epoch': epoch, 'model_state_dict': model.state_dict(), 'optim_state_dict': optimizer.state_dict(), 'criterion_state_dict': train_criterion.state_dict()}
+        torch.save(checkpoint_dict, filename)
+        print('Epoch {:d} checkpoint saved for {:s}'.format(epoch, experiment_name))
 
     model.train()
     train_data_time = AverageMeter()
     train_batch_time = AverageMeter()
     end = time.time()
-    for batch_idx, (data, target) in enumerate(train_loader):
+    for batch_idx, (data, target, scene_idx) in enumerate(train_loader):
         train_data_time.update(time.time() - end)
 
         data_var = Variable(data, requires_grad=True)
@@ -167,9 +177,11 @@ for epoch in range(opt.epochs):
         data_var = data_var.to(device)
         target_var = target_var.to(device)
 
+        gt_scene = scene_idx.to(device)
+
         with torch.set_grad_enabled(True):
-            output = model(data_var)
-            loss_tmp = train_criterion(output, target_var)
+            output, est_scene_log_distr = model(data_var, scene_idx)
+            loss_tmp = train_criterion(output, target_var) + nll_loss(est_scene_log_distr, gt_scene)
 
         loss_tmp.backward()
         optimizer.step()
