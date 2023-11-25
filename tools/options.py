@@ -28,7 +28,8 @@ class Options():
         self.parser.add_argument('--real', type=bool, default=True)
         self.parser.add_argument('--steps', type=int, default=3)
         self.parser.add_argument('--val', type=bool, default=False)
-        self.parser.add_argument('--checkpoint_path', type=str, default='/media/dev/storage1/robotcar_tests1e4_opt/RobotCar_full_HyperAtLoc_False/models/epoch_005.pth.tar')
+        self.parser.add_argument('--checkpoint_path', type=str, default='/media/dev/storage1/robotcar_equal_scenes/RobotCar_full_MSHyperPose_False/models/epoch_016.pth.tar')
+        self.parser.add_argument('--equalize_scenes', type=bool, default=False)
 
         # train options
         self.parser.add_argument('--epochs', type=int, default=5)
