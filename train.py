@@ -81,7 +81,12 @@ data_transform = transforms.Compose(tforms)
 target_transform = transforms.Lambda(lambda x: torch.from_numpy(x).float())
 
 # Load the dataset
-kwargs = dict(scene=opt.scene, data_path=opt.data_dir, transform=data_transform, target_transform=target_transform, seed=opt.seed)
+kwargs = dict(scene=opt.scene,
+              data_path=opt.data_dir,
+              transform=data_transform,
+              target_transform=target_transform,
+              seed=opt.seed,
+              equalize_scenes=opt.equalize_scenes)
 if opt.model == 'AtLoc':
     if opt.dataset == '7Scenes':
         train_set = SevenScenes(train=True, **kwargs)
@@ -110,14 +115,15 @@ kwargs = {'num_workers': opt.nThreads, 'pin_memory': True} if cuda else {}
 train_loader = DataLoader(train_set, batch_size=opt.batchsize, shuffle=True, **kwargs)
 val_loader = DataLoader(val_set, batch_size=opt.batchsize, shuffle=False, **kwargs)
 
-model.to(device)
+model = torch.nn.DataParallel(model, device_ids=[0,1,2])
 
 # Load pre-trained checkpoint
 if opt.checkpoint_path is not None:
-    checkpoint = torch.load(opt.checkpoint_path, map_location=device)
+    checkpoint = torch.load(opt.checkpoint_path)
     load_state_dict(model, checkpoint['model_state_dict'])
     print('Loaded weights from {:s}'.format(opt.checkpoint_path))
 
+model.to(device)
 train_criterion.to(device)
 val_criterion.to(device)
 nll_loss = torch.nn.NLLLoss()
@@ -161,7 +167,7 @@ for epoch in range(opt.epochs):
 
     if epoch % opt.save_freq == 0:
         filename = osp.join(opt.models_dir, 'epoch_{:03d}.pth.tar'.format(epoch))
-        checkpoint_dict = {'epoch': epoch, 'model_state_dict': model.state_dict(), 'optim_state_dict': optimizer.state_dict(), 'criterion_state_dict': train_criterion.state_dict()}
+        checkpoint_dict = {'epoch': epoch, 'model_state_dict': model.module.state_dict(), 'optim_state_dict': optimizer.state_dict(), 'criterion_state_dict': train_criterion.state_dict()}
         torch.save(checkpoint_dict, filename)
         print('Epoch {:d} checkpoint saved for {:s}'.format(epoch, experiment_name))
 
